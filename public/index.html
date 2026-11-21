@@ -79,6 +79,8 @@
     .dot.online { background: #16a34a; }
     .dot.offline { background: #dc2626; }
 
+    .status + .status { margin-top: 12px; }
+
     .status strong { display: block; font-size: 15px; }
     .status span { font-size: 13px; color: #52707a; }
 
@@ -121,11 +123,22 @@
 
     <code>/api/chat</code>
 
+    <div class="status">
+      <div id="voice-dot" class="dot"></div>
+      <div>
+        <strong id="voice-status-title">Checking voice...</strong>
+        <span id="voice-status-detail">Contacting the voice endpoint.</span>
+      </div>
+    </div>
+
+    <code>/api/tts</code>
+
     <ul>
       <li>Set the Vercel environment variable GROQ_API_KEY.</li>
       <li>Optional: set GROQ_MODEL to override the default Groq model.</li>
       <li>Deploy this folder to Vercel.</li>
       <li>Use your deployed /api/chat URL in the app config.</li>
+      <li>The app uses /api/tts for the MediBot voice replies.</li>
     </ul>
   </main>
 
@@ -152,7 +165,35 @@
       }
     }
 
+    async function checkVoiceStatus() {
+      const dot = document.getElementById("voice-dot");
+      const title = document.getElementById("voice-status-title");
+      const detail = document.getElementById("voice-status-detail");
+
+      try {
+        const response = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: "Voice service check." })
+        });
+        const contentType = response.headers.get("content-type") || "";
+        const audio = await response.blob();
+        const online = response.ok && contentType.includes("audio/mpeg") && audio.size > 0;
+
+        dot.className = online ? "dot online" : "dot offline";
+        title.textContent = online ? "Voice online" : "Voice needs setup";
+        detail.textContent = online
+          ? `Neerja Indian English voice is ready (${audio.size} bytes)`
+          : "The speech service did not return audio.";
+      } catch (error) {
+        dot.className = "dot offline";
+        title.textContent = "Voice unreachable";
+        detail.textContent = "Deploy this project to Vercel first.";
+      }
+    }
+
     checkStatus();
+    checkVoiceStatus();
   </script>
 </body>
 </html>
