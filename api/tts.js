@@ -18,15 +18,62 @@ function cleanForSpeech(text) {
     .trim();
 }
 
-async function synthesize(text, voice) {
-  const { EdgeTTS } = await import("edge-tts-universal");
-  const tts = new EdgeTTS(text, voice, {
-    rate: "-4%",
-    pitch: "+0Hz",
-    volume: "+0%"
+function escapeXml(text) {
+  return text.replace(/[<>&"']/g, (character) => {
+    switch (character) {
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case "&":
+        return "&amp;";
+      case '"':
+        return "&quot;";
+      default:
+        return "&apos;";
+    }
   });
-  const result = await tts.synthesize();
-  return Buffer.from(await result.audio.arrayBuffer());
+}
+
+async function synthesize(text, voice) {
+  const { MsEdgeTTS, OUTPUT_FORMAT } = require("msedge-tts");
+  const tts = new MsEdgeTTS({
+    connectionTimeoutMs: 15000,
+    synthesisTimeoutMs: 60000
+  });
+
+  try {
+    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+    return await new Promise((resolve, reject) => {
+      const chunks = [];
+      let settled = false;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        callback(value);
+      };
+
+      const { audioStream } = tts.toStream(escapeXml(text), {
+        rate: "-4%",
+        pitch: "+0Hz",
+        volume: "+0%"
+      });
+
+      audioStream.on("data", (chunk) => chunks.push(chunk));
+      audioStream.on("error", (error) => finish(reject, error));
+      audioStream.on("end", () => finish(resolve, Buffer.concat(chunks)));
+    });
+  } finally {
+    tts.close();
+  }
+}
+
+function sendAudio(res, audio) {
+  res.status(200);
+  res.setHeader("Content-Type", "audio/mpeg");
+  res.setHeader("Content-Length", audio.length);
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.end(audio);
 }
 
 module.exports = async function handler(req, res) {
@@ -40,7 +87,7 @@ module.exports = async function handler(req, res) {
   if (req.method === "GET") {
     res.status(200).json({
       online: true,
-      provider: "edge-tts",
+      provider: "msedge-tts",
       primaryVoice: PRIMARY_VOICE,
       fallbackVoice: FALLBACK_VOICE
     });
@@ -62,11 +109,7 @@ module.exports = async function handler(req, res) {
 
   try {
     const audio = await synthesize(text, PRIMARY_VOICE);
-    res.status(200);
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Content-Length", audio.length);
-    res.setHeader("Cache-Control", "public, max-age=3600");
-    res.end(audio);
+    sendAudio(res, audio);
     return;
   } catch (primaryError) {
     console.error(`${PRIMARY_VOICE} failed:`, primaryError.message);
@@ -74,11 +117,7 @@ module.exports = async function handler(req, res) {
 
   try {
     const audio = await synthesize(text, FALLBACK_VOICE);
-    res.status(200);
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Content-Length", audio.length);
-    res.setHeader("Cache-Control", "public, max-age=3600");
-    res.end(audio);
+    sendAudio(res, audio);
   } catch (fallbackError) {
     console.error(`${FALLBACK_VOICE} failed:`, fallbackError.message);
     res.status(503).json({ error: "Speech service is temporarily unavailable." });
