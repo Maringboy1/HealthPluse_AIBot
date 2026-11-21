@@ -5,7 +5,9 @@ const SYSTEM_PROMPT = `You are HealthPulse Manipur, a warm, empathetic medical a
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const PRIMARY_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
-const FALLBACK_MODEL = process.env.GROQ_FALLBACK_MODEL || "qwen/qwen3.8-27b";
+const SECONDARY_MODEL = process.env.GROQ_FALLBACK_MODEL || "openai/gpt-oss-120b";
+const TERTIARY_MODEL = process.env.GROQ_LAST_MODEL || "qwen/qwen3.8-27b";
+const MODELS = [...new Set([PRIMARY_MODEL, SECONDARY_MODEL, TERTIARY_MODEL].filter(Boolean))];
 
 function setHeaders(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -24,7 +26,8 @@ async function callGroq(model, messages, apiKey) {
       model,
       messages,
       temperature: 0.3,
-      max_tokens: 300
+      max_tokens: 300,
+      reasoning_effort: model.startsWith("qwen/") ? "none" : "low"
     }),
     signal: AbortSignal.timeout(25000)
   });
@@ -43,12 +46,13 @@ async function callGroq(model, messages, apiKey) {
 }
 
 async function callWithRetry(model, messages, apiKey) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       return await callGroq(model, messages, apiKey);
     } catch (error) {
-      if (error.status !== 429 || attempt === 1) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 1200));
+      const retryable = error.status === 429 || error.status >= 500;
+      if (!retryable || attempt === 2) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 900 * (attempt + 1)));
     }
   }
 }
@@ -105,17 +109,17 @@ module.exports = async function handler(req, res) {
     { role: "user", content: question }
   ];
 
-  try {
-    let text;
+  const failures = [];
+  for (const model of MODELS) {
     try {
-      text = await callWithRetry(PRIMARY_MODEL, messages, apiKey);
-    } catch (primaryError) {
-      console.error("Primary model failed:", primaryError.message);
-      text = await callWithRetry(FALLBACK_MODEL, messages, apiKey);
+      const text = await callWithRetry(model, messages, apiKey);
+      res.status(200).json({ text });
+      return;
+    } catch (error) {
+      console.error(`Groq model ${model} failed:`, error.message);
+      failures.push(`${model}: ${error.message}`);
     }
-    res.status(200).json({ text });
-  } catch (error) {
-    console.error("AI request failed:", error.message);
-    res.status(503).json({ error: "The AI service is temporarily unavailable." });
   }
+  console.error("All Groq models failed:", failures.join(" | "));
+  res.status(503).json({ error: "The AI service is temporarily unavailable." });
 };
