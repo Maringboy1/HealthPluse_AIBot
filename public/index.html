@@ -108,7 +108,7 @@
     <h1>AI service is ready to connect.</h1>
     <p>
       This site hosts the secure chat endpoint used by the HealthPulse Manipur app.
-      The OpenRouter API key is never shown here and is never stored in the mobile app.
+      The Groq API key is never shown here and is never stored in the mobile app.
     </p>
 
     <div class="status">
@@ -122,8 +122,8 @@
     <code>/api/chat</code>
 
     <ul>
-      <li>Set the Vercel environment variable OPENROUTER_API_KEY.</li>
-      <li>Optional: set OPENROUTER_MODEL to override the default free model.</li>
+      <li>Set the Vercel environment variable GROQ_API_KEY.</li>
+      <li>Optional: set GROQ_MODEL to override the default Groq model.</li>
       <li>Deploy this folder to Vercel.</li>
       <li>Use your deployed /api/chat URL in the app config.</li>
     </ul>
@@ -144,7 +144,7 @@
         title.textContent = online ? "Service online" : "Service needs setup";
         detail.textContent = online
           ? `Model: ${data.model || "configured"}`
-          : "Add OPENROUTER_API_KEY in Vercel, then redeploy.";
+          : "Add GROQ_API_KEY in Vercel, then redeploy.";
       } catch (error) {
         dot.className = "dot offline";
         title.textContent = "Service unreachable";

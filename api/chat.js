@@ -3,8 +3,9 @@ const SYSTEM_PROMPT = `You are HealthPulse Manipur, a warm, empathetic medical a
 	• Keep replies clear, helpful, concise, and easy to understand in everyday English (2 to 4 short sentences). Always remind users to consult a qualified doctor or visit a nearby hospital/clinic for an accurate diagnosis or medical emergency.
 	• If asked about anything unrelated to health or medicine (such as coding, politics, sports, or general trivia), politely decline and remind them that you are HealthPulse Manipur and can only assist with health and medical topics.`;
 
-const PRIMARY_MODEL = process.env.OPENROUTER_MODEL || "google/gemma-3-4b-it:free";
-const FALLBACK_MODEL = "meta-llama/llama-3.2-3b-instruct:free";
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+const PRIMARY_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
+const FALLBACK_MODEL = process.env.GROQ_FALLBACK_MODEL || "qwen/qwen3.8-27b";
 
 function setHeaders(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -12,14 +13,12 @@ function setHeaders(res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
-async function callOpenRouter(model, messages, apiKey) {
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+async function callGroq(model, messages, apiKey) {
+  const response = await fetch(GROQ_API_URL, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://healthpulse-manipur.vercel.app",
-      "X-Title": "HealthPulse Manipur"
+      "Content-Type": "application/json"
     },
     body: JSON.stringify({
       model,
@@ -31,13 +30,27 @@ async function callOpenRouter(model, messages, apiKey) {
   });
 
   if (!response.ok) {
-    throw new Error(`OpenRouter failed with HTTP ${response.status}`);
+    const detail = await response.text().catch(() => "");
+    const error = new Error(`Groq failed with HTTP ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ""}`);
+    error.status = response.status;
+    throw error;
   }
 
   const body = await response.json();
   const text = body.choices?.[0]?.message?.content?.trim();
-  if (!text) throw new Error("OpenRouter returned an empty answer.");
+  if (!text) throw new Error("Groq returned an empty answer.");
   return text;
+}
+
+async function callWithRetry(model, messages, apiKey) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await callGroq(model, messages, apiKey);
+    } catch (error) {
+      if (error.status !== 429 || attempt === 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
+  }
 }
 
 module.exports = async function handler(req, res) {
@@ -49,7 +62,11 @@ module.exports = async function handler(req, res) {
   }
 
   if (req.method === "GET") {
-    res.status(200).json({ online: Boolean(process.env.OPENROUTER_API_KEY), model: PRIMARY_MODEL });
+    res.status(200).json({
+      online: Boolean(process.env.GROQ_API_KEY),
+      provider: "groq",
+      model: PRIMARY_MODEL
+    });
     return;
   }
 
@@ -58,7 +75,7 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     res.status(503).json({ error: "AI service is not configured." });
     return;
@@ -91,10 +108,10 @@ module.exports = async function handler(req, res) {
   try {
     let text;
     try {
-      text = await callOpenRouter(PRIMARY_MODEL, messages, apiKey);
+      text = await callWithRetry(PRIMARY_MODEL, messages, apiKey);
     } catch (primaryError) {
       console.error("Primary model failed:", primaryError.message);
-      text = await callOpenRouter(FALLBACK_MODEL, messages, apiKey);
+      text = await callWithRetry(FALLBACK_MODEL, messages, apiKey);
     }
     res.status(200).json({ text });
   } catch (error) {
