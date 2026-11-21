@@ -97,8 +97,9 @@ module.exports = async function handler(req, res) {
   const history = rawHistory
     .map((item) => {
       const role = item?.role === "user" ? "user" : item?.role === "assistant" ? "assistant" : null;
-      const text = typeof item?.text === "string" ? item.text.trim().slice(0, 3000) : "";
-      return role && text ? { role, text } : null;
+      const rawText = typeof item?.text === "string" ? item.text : typeof item?.content === "string" ? item.content : "";
+      const content = rawText.trim().slice(0, 3000);
+      return role && content ? { role, content } : null;
     })
     .filter(Boolean);
 
