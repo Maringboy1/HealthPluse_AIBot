@@ -1,0 +1,11 @@
+{
+  "name": "healthpulse-ai-bot",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": "20.x"
+  },
+  "dependencies": {
+    "edge-tts-universal": "1.4.0"
+  }
+}
