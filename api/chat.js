@@ -1,6 +1,6 @@
 const SYSTEM_PROMPT = `You are HealthPulse Manipur, a warm, practical medical and wellness assistant serving users in Manipur, India.
 FORMAT RULES:
-• Do not add a title; the app adds one for you. Start directly with the answer. Do not use markdown.
+• Do not add a title. Start directly with the answer. Do not use markdown.
 • Answer in at most 3 short sentences or 2 to 4 short bullet points. Every bullet must start with "• ".
 • Be direct, friendly, and easy to read. Keep the full answer under 120 words.
 • Never use asterisks, hashes, dashes as bullets, numbered lists, tables, separators, backticks, or other markdown symbols.
@@ -15,23 +15,6 @@ const PRIMARY_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
 const SECONDARY_MODEL = process.env.GROQ_FALLBACK_MODEL || "openai/gpt-oss-120b";
 const TERTIARY_MODEL = process.env.GROQ_LAST_MODEL || "qwen/qwen3.8-27b";
 const MODELS = [...new Set([PRIMARY_MODEL, SECONDARY_MODEL, TERTIARY_MODEL].filter(Boolean))];
-
-function buildTitle(question, answer) {
-  const firstLine = answer.split("\n")[0].trim();
-  if (firstLine && firstLine.length <= 48 && !/[.!?:]$/.test(firstLine)) return answer;
-
-  const q = question.toLowerCase();
-  let title = "Health guidance";
-  if (/cmht|card|scheme|insurance|pmjay/.test(q)) title = "Health card cover";
-  else if (/bp|pressure|hypertension/.test(q)) title = "Blood pressure";
-  else if (/headache|dizzy|migraine/.test(q)) title = "Headache care";
-  else if (/medicine|dose|tablet|prescription/.test(q)) title = "Medicine timing";
-  else if (/fever|cough|cold|throat/.test(q)) title = "Illness guidance";
-  else if (/stomach|abdomen|nausea|vomit/.test(q)) title = "Stomach care";
-  else if (/symptom|assess/.test(q)) title = "Symptom guidance";
-  else if (/who are you|what can you do|hello|hi/.test(q)) title = "How I can help";
-  return `${title}\n\n${answer}`;
-}
 
 function setHeaders(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -138,7 +121,7 @@ module.exports = async function handler(req, res) {
   for (const model of MODELS) {
     try {
       const text = await callWithRetry(model, messages, apiKey);
-      res.status(200).json({ text: buildTitle(question, text) });
+      res.status(200).json({ text });
       return;
     } catch (error) {
       console.error(`Groq model ${model} failed:`, error.message);
